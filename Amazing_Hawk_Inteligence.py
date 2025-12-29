@@ -9,7 +9,7 @@ import base64
 # =============================================================================
 # CONFIGURAÇÃO
 # =============================================================================
-st.set_page_config(page_title="SkyHawk & Amazing CRM v29", layout="wide", page_icon="🚀")
+st.set_page_config(page_title="SkyHawk & Amazing CRM v33", layout="wide", page_icon="🚀")
 
 PASTA_DO_SCRIPT = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO_LOGO = os.path.join(PASTA_DO_SCRIPT, "logo_holding.png")
@@ -27,26 +27,43 @@ def get_image_base64(path):
         return ""
 
 
-def calcular_cenarios_fiscais(faturamento_mensal, empresa_nome):
-    faturamento_anual_est = faturamento_mensal * 12
+def calcular_cenarios_fiscais_detalhado(faturamento_mensal, empresa_tipo):
+    faturamento_anual = faturamento_mensal * 12
     analise = {}
 
-    aliq_simples = 0.06;
-    faixa = "1 (Até 180k)"
-    if faturamento_anual_est > 180000: aliq_simples = 0.112; faixa = "2 (180k - 360k)"
-    if faturamento_anual_est > 360000: aliq_simples = 0.135; faixa = "3 (360k - 720k)"
-    if faturamento_anual_est > 720000: aliq_simples = 0.16; faixa = "4 (720k - 1.8M)"
-
-    analise['simples_valor'] = faturamento_mensal * aliq_simples
-    analise['presumido_valor'] = faturamento_mensal * 0.1633
-    analise['faturamento_anual'] = faturamento_anual_est
-    analise['faixa'] = faixa
-
-    dicas = []
-    if "SkyHawk" in empresa_nome:
-        dicas.append(">> ATENÇÃO: O CNAE de Monitoramento pode exigir Anexo IV. Verifique a folha de pagamento.")
+    if faturamento_anual <= 180000:
+        faixa = "1 (Até 180k)";
+        aliq_base = 0.06 if empresa_tipo == 'Engenharia' else 0.045
+    elif faturamento_anual <= 360000:
+        faixa = "2 (180k - 360k)";
+        aliq_base = 0.112 if empresa_tipo == 'Engenharia' else 0.09
+    elif faturamento_anual <= 720000:
+        faixa = "3 (360k - 720k)";
+        aliq_base = 0.135 if empresa_tipo == 'Engenharia' else 0.102
     else:
-        dicas.append(">> FATOR R: Mantenha a folha > 28% do faturamento para garantir Anexo III.")
+        faixa = "4+ (Acima de 720k)";
+        aliq_base = 0.16 if empresa_tipo == 'Engenharia' else 0.14
+
+    analise['faixa'] = faixa
+    analise['faturamento_anual'] = faturamento_anual
+    dicas = []
+
+    if empresa_tipo == "Seguranca":
+        analise['regime_provavel'] = "Simples Nacional - Anexo IV"
+        imposto_simples = faturamento_mensal * aliq_base
+        inss_patronal_est = faturamento_mensal * 0.40 * 0.20
+        analise['custo_total_est'] = imposto_simples + inss_patronal_est
+        dicas.append("ANÁLISE DE RISCO (ANEXO IV): Monitoramento paga INSS Patronal (20%) à parte.")
+        dicas.append("RECOMENDAÇÃO: Avaliar Lucro Presumido se a folha for alta.")
+
+    elif empresa_tipo == "Engenharia":
+        folha_necessaria = faturamento_mensal * 0.28
+        analise['regime_provavel'] = "Simples Nacional - Fator R"
+        imposto_anexo_iii = faturamento_mensal * aliq_base
+        imposto_anexo_v = faturamento_mensal * 0.155
+        analise['custo_total_est'] = imposto_anexo_iii
+        dicas.append(f"ESTRATÉGIA FATOR R: Mantenha folha acima de R$ {folha_necessaria:,.2f} (28%).")
+        dicas.append(f"ECONOMIA: Aprox. R$ {imposto_anexo_v - imposto_anexo_iii:,.2f} mensais vs Anexo V.")
 
     analise['dicas'] = dicas
     return analise
@@ -56,55 +73,39 @@ def gerar_analise_roi(contrato_escolhido, total_mensal_escolhido, duracao):
     analise = {}
     custo_equipamento = 160000.00
     gap_mensal_economia = 8000.00
-    meses_payback = custo_equipamento / gap_mensal_economia  # 20 Meses
+    meses_payback = custo_equipamento / gap_mensal_economia
 
     if "Venda" in contrato_escolhido:
         meses_lucro = duracao - meses_payback
         if meses_lucro > 0:
             lucro_projetado = meses_lucro * gap_mensal_economia
-            titulo = f"💰 Decisão Lucrativa: Você economiza R$ {lucro_projetado:,.2f}"
-            texto_html = f"""
-            <p style='color:#1b5e20; font-size:16px;'><b>★ Excelente Escolha Estratégica!</b></p>
-            <p>Ao adquirir o equipamento, você atinge o <b>Ponto de Equilíbrio no mês {int(meses_payback)}</b>.</p>
-            <p>Nos {int(meses_lucro)} meses restantes, sua empresa gera uma <b>Economia Líquida de R$ {lucro_projetado:,.2f}</b> comparado ao aluguel.</p>
-            """
+            titulo = f"💰 Decisão Lucrativa: Economia de R$ {lucro_projetado:,.2f}"
             texto_pdf = (
-                f"ANÁLISE DE LUCRO REAL: Esta modalidade é a mais rentável para o prazo de {duracao} meses. "
-                f"O equipamento se paga no mês {int(meses_payback)}. A partir daí, sua empresa acumula uma economia direta de R$ {lucro_projetado:,.2f}."
+                f"ANÁLISE DE LUCRO REAL: Esta modalidade é a mais rentável para {duracao} meses. "
+                f"O equipamento se paga no mês {int(meses_payback)}. Economia direta de R$ {lucro_projetado:,.2f}."
             )
         else:
             titulo = "⚠️ Alerta de Viabilidade Financeira"
-            texto_html = f"""
-            <p style='color:#b71c1c;'><b>Atenção: O prazo de {duracao} meses é curto para amortizar a compra.</b></p>
-            <p>O equipamento leva 20 meses para 'se pagar'. Para este prazo, o custo total da compra será maior que o aluguel.</p>
-            <p><b>Recomendação:</b> Considere o modelo COMODATO.</p>
-            """
             texto_pdf = (
-                f"ANÁLISE CRÍTICA: Para o prazo de {duracao} meses, a aquisição não atinge o ponto de equilíbrio (20 meses). "
-                "Financeiramente, o modelo de Comodato (Aluguel) é mais seguro."
+                f"ANÁLISE CRÍTICA: Para {duracao} meses, a aquisição não atinge o break-even (20 meses). "
+                "Comodato é mais seguro."
             )
+        texto_html = f"<p style='color:#1b5e20'><b>{titulo}</b></p><p>{texto_pdf}</p>"
     else:
         if duracao >= 36:
             lucro_perdido = (duracao - meses_payback) * gap_mensal_economia
-            titulo = f"ℹ️ Análise Comparativa: Comodato vs Compra"
-            texto_html = f"""
-            <p><b>Você escolheu Comodato (Sem investimento inicial).</b> Ótimo para fluxo de caixa.</p>
-            <p style='color:#e65100;'><b>Nota:</b> Se optasse pela COMPRA neste prazo, teria uma economia total de <b>R$ {lucro_perdido:,.2f}</b>.</p>
-            """
+            titulo = "ℹ️ Análise Comparativa: Comodato vs Compra"
             texto_pdf = (
-                f"ANÁLISE DE CENÁRIO: O modelo Comodato oferece segurança total e zero investimento inicial. "
-                f"Porém, no modelo de Compra, o equipamento se pagaria no mês 20, gerando economia de R$ {lucro_perdido:,.2f}."
+                f"ANÁLISE DE CENÁRIO: Comodato é seguro (Zero CAPEX). "
+                f"Porém, na Compra, o equipamento se pagaria no mês 20, gerando economia de R$ {lucro_perdido:,.2f}."
             )
         else:
             titulo = "✅ Comodato: A Melhor Escolha para este Prazo"
-            texto_html = f"""
-            <p style='color:#1b5e20;'><b>Recomendação Oficial: O Comodato é superior para {duracao} meses.</b></p>
-            <p>Como o equipamento custa R$ 160k, comprá-lo para usar por apenas {duracao} meses geraria prejuízo.</p>
-            """
             texto_pdf = (
-                f"VEREDICTO: Para contratos de {duracao} meses, o Comodato é a única opção financeiramente viável, "
-                "evitando a imobilização de R$ 160.000,00 sem tempo hábil para retorno."
+                f"VEREDICTO: Para {duracao} meses, o Comodato é a única opção viável, "
+                "evitando imobilização de R$ 160k sem retorno."
             )
+        texto_html = f"<p style='color:#1b5e20'><b>{titulo}</b></p><p>{texto_pdf}</p>"
 
     analise['titulo'] = titulo
     analise['texto'] = texto_html
@@ -116,7 +117,7 @@ def gerar_analise_roi(contrato_escolhido, total_mensal_escolhido, duracao):
 # BANCO DE DADOS
 # =============================================================================
 def init_db():
-    conn = sqlite3.connect("skyhawk_v29.db")
+    conn = sqlite3.connect("skyhawk_v33.db")
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS propostas (
@@ -137,7 +138,7 @@ def init_db():
 
 
 def salvar_venda(cliente, contrato, duracao, servicos, total, fat_amz, fat_sky, empresa):
-    conn = sqlite3.connect("skyhawk_v29.db")
+    conn = sqlite3.connect("skyhawk_v33.db")
     cursor = conn.cursor()
     data_hoje = datetime.datetime.now().strftime("%d/%m/%Y")
     cursor.execute("""
@@ -149,7 +150,7 @@ def salvar_venda(cliente, contrato, duracao, servicos, total, fat_amz, fat_sky, 
 
 
 def carregar_dados():
-    conn = sqlite3.connect("skyhawk_v29.db")
+    conn = sqlite3.connect("skyhawk_v33.db")
     df = pd.read_sql_query("SELECT * FROM propostas", conn)
     conn.close()
     return df
@@ -176,14 +177,20 @@ def calcular_totais(carrinho):
 
 
 # =============================================================================
-# GERADORES DE PDF E HTML (PROPOSTA)
+# GERADORES DE PDF (COM CORREÇÃO DE POSICIONAMENTO)
 # =============================================================================
 def gerar_proposta_pdf(cliente, contrato, duracao, carrinho, total, roi_data):
     pdf = FPDF()
     pdf.add_page()
-    if os.path.exists(ARQUIVO_LOGO): pdf.image(ARQUIVO_LOGO, x=55, y=10, w=100)
 
-    pdf.set_y(50)
+    # --- CORREÇÃO DE POSICIONAMENTO ---
+    if os.path.exists(ARQUIVO_LOGO):
+        # Logo em Y=10, largura 100
+        pdf.image(ARQUIVO_LOGO, x=55, y=10, w=100)
+
+    # Aumentado o espaço vertical para 65 (antes era 50) para evitar sobreposição
+    pdf.set_y(65)
+
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, "PROPOSTA COMERCIAL INTEGRADA", 0, 1, 'C')
     pdf.set_font("Arial", 'I', 10)
@@ -195,7 +202,6 @@ def gerar_proposta_pdf(cliente, contrato, duracao, carrinho, total, roi_data):
     pdf.set_font("Arial", '', 11)
     pdf.cell(0, 8, f"Modalidade: {contrato} | Vigência: {duracao} meses", 0, 1)
 
-    # ROI
     pdf.ln(5)
     pdf.set_fill_color(240, 240, 240)
     pdf.rect(10, pdf.get_y(), 190, 45, 'F')
@@ -205,7 +211,6 @@ def gerar_proposta_pdf(cliente, contrato, duracao, carrinho, total, roi_data):
     pdf.set_font("Arial", '', 9)
     pdf.multi_cell(180, 5, roi_data['pdf_text'])
 
-    # Tabela
     pdf.ln(15)
     pdf.set_font("Arial", 'B', 10)
     pdf.set_fill_color(0, 77, 64);
@@ -225,7 +230,6 @@ def gerar_proposta_pdf(cliente, contrato, duracao, carrinho, total, roi_data):
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, f"Total Mensal: R$ {total:,.2f}", 0, 1, 'R')
 
-    # Assinaturas
     pdf.set_y(-45);
     y_sig = pdf.get_y();
     pdf.set_font("Arial", '', 8)
@@ -235,6 +239,111 @@ def gerar_proposta_pdf(cliente, contrato, duracao, carrinho, total, roi_data):
     pdf.text(80, y_sig + 5, "Engenharia AmazingDrone")
     pdf.line(140, y_sig, 195, y_sig);
     pdf.text(145, y_sig + 5, "De Acordo (Cliente)")
+
+    return pdf.output(dest='S').encode('latin-1')
+
+
+def gerar_relatorio_geral_completo_pdf(df):
+    pdf = FPDF()
+    pdf.add_page()
+
+    # --- CORREÇÃO DE POSICIONAMENTO ---
+    if os.path.exists(ARQUIVO_LOGO):
+        pdf.image(ARQUIVO_LOGO, x=55, y=10, w=100)
+
+    # Aumentado o espaço vertical para 65
+    pdf.set_y(65)
+
+    pdf.set_font("Arial", 'B', 18)
+    pdf.cell(0, 10, "RELATÓRIO GERAL DE INTELIGÊNCIA", 0, 1, 'C')
+    pdf.set_font("Arial", '', 10)
+    pdf.cell(0, 5, f"Data: {datetime.datetime.now().strftime('%d/%m/%Y')} | Holding Consolidada", 0, 1, 'C')
+    pdf.ln(10)
+
+    total_geral = df['valor_total'].sum()
+    total_sky = df['fat_skyhawk'].sum()
+    total_amz = df['fat_amazing'].sum()
+
+    analise_sky = calcular_cenarios_fiscais_detalhado(total_sky, "Seguranca")
+    analise_amz = calcular_cenarios_fiscais_detalhado(total_amz, "Engenharia")
+
+    pdf.set_fill_color(240, 240, 240)
+    pdf.rect(10, pdf.get_y(), 190, 30, 'F')
+    y_start = pdf.get_y()
+
+    pdf.set_xy(10, y_start + 5)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(63, 10, "FATURAMENTO HOLDING", 0, 0, 'C')
+    pdf.cell(63, 10, "SKYHAWK", 0, 0, 'C')
+    pdf.cell(63, 10, "AMAZING", 0, 1, 'C')
+
+    pdf.set_font("Arial", 'B', 14);
+    pdf.set_text_color(0, 77, 64)
+    pdf.cell(63, 10, f"R$ {total_geral:,.2f}", 0, 0, 'C')
+    pdf.set_text_color(0, 0, 0)
+    pdf.cell(63, 10, f"R$ {total_sky:,.2f}", 0, 0, 'C')
+    pdf.cell(63, 10, f"R$ {total_amz:,.2f}", 0, 1, 'C')
+    pdf.ln(15)
+
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "ESTRATEGIA TRIBUTARIA E ELISAO FISCAL", 0, 1, 'L')
+    pdf.ln(2)
+
+    pdf.set_fill_color(224, 242, 241)
+    pdf.rect(10, pdf.get_y(), 190, 55, 'F')
+    pdf.set_xy(15, pdf.get_y() + 5)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 6, f"1. SKYHAWK SECURITY (Recorrencia: R$ {total_sky:,.2f}/mes)", 0, 1)
+    pdf.set_font("Arial", '', 9)
+    pdf.cell(0, 5,
+             f"Estimativa Anual: R$ {analise_sky['faturamento_anual']:,.2f} | Regime: {analise_sky['regime_provavel']}",
+             0, 1)
+    pdf.ln(2)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(0, 5, "Analise de Otimizacao:", 0, 1)
+    pdf.set_font("Arial", '', 9)
+    for dica in analise_sky['dicas']:
+        pdf.multi_cell(180, 5, f"- {dica}")
+    pdf.ln(5)
+
+    pdf.set_fill_color(255, 243, 224)
+    pdf.rect(10, pdf.get_y(), 190, 55, 'F')
+    pdf.set_xy(15, pdf.get_y() + 5)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 6, f"2. AMAZING DRONE SOLUTIONS (Recorrencia: R$ {total_amz:,.2f}/mes)", 0, 1)
+    pdf.set_font("Arial", '', 9)
+    pdf.cell(0, 5,
+             f"Estimativa Anual: R$ {analise_amz['faturamento_anual']:,.2f} | Regime: {analise_amz['regime_provavel']}",
+             0, 1)
+    pdf.ln(2)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(0, 5, "Analise de Otimizacao (Fator R):", 0, 1)
+    pdf.set_font("Arial", '', 9)
+    for dica in analise_amz['dicas']:
+        pdf.multi_cell(180, 5, f"- {dica}")
+
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(0, 10, "Detalhamento de Contratos", 0, 1, 'L')
+    pdf.set_font("Arial", 'B', 8)
+    pdf.set_fill_color(0, 77, 64);
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(10, 8, "ID", 1, 0, 'C', True)
+    pdf.cell(50, 8, "Cliente", 1, 0, 'C', True)
+    pdf.cell(25, 8, "Contrato", 1, 0, 'C', True)
+    pdf.cell(30, 8, "Total", 1, 0, 'C', True)
+    pdf.cell(37.5, 8, "Fat. Sky", 1, 0, 'C', True)
+    pdf.cell(37.5, 8, "Fat. Amz", 1, 1, 'C', True)
+
+    pdf.set_font("Arial", '', 8);
+    pdf.set_text_color(0, 0, 0)
+    for index, row in df.iterrows():
+        pdf.cell(10, 8, str(row['id']), 1, 0, 'C')
+        pdf.cell(50, 8, str(row['cliente'])[:25], 1, 0, 'C')
+        pdf.cell(25, 8, str(row['tipo_contrato']).split(' ')[0], 1, 0, 'C')
+        pdf.cell(30, 8, f"{row['valor_total']:,.2f}", 1, 0, 'C')
+        pdf.cell(37.5, 8, f"{row['fat_skyhawk']:,.2f}", 1, 0, 'C')
+        pdf.cell(37.5, 8, f"{row['fat_amazing']:,.2f}", 1, 1, 'C')
 
     return pdf.output(dest='S').encode('latin-1')
 
@@ -302,66 +411,6 @@ def gerar_proposta_html(cliente, contrato, duracao, carrinho, total, roi_data):
     return html
 
 
-def gerar_relatorio_geral_completo_pdf(df):
-    pdf = FPDF()
-    pdf.add_page()
-    if os.path.exists(ARQUIVO_LOGO): pdf.image(ARQUIVO_LOGO, x=55, y=10, w=100)
-
-    pdf.ln(50)
-    pdf.set_font("Arial", 'B', 18)
-    pdf.cell(0, 10, "RELATÓRIO GERAL ESTRATÉGICO", 0, 1, 'C')
-    pdf.set_font("Arial", '', 10)
-    pdf.cell(0, 5, f"Data: {datetime.datetime.now().strftime('%d/%m/%Y')}", 0, 1, 'C')
-    pdf.ln(10)
-
-    total_geral = df['valor_total'].sum()
-    total_sky = df['fat_skyhawk'].sum()
-    total_amz = df['fat_amazing'].sum()
-
-    pdf.set_fill_color(240, 240, 240)
-    pdf.rect(10, pdf.get_y(), 190, 30, 'F')
-    y_start = pdf.get_y()
-
-    pdf.set_xy(10, y_start + 5)
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(63, 10, "FATURAMENTO GLOBAL", 0, 0, 'C')
-    pdf.cell(63, 10, "SKYHAWK", 0, 0, 'C')
-    pdf.cell(63, 10, "AMAZING", 0, 1, 'C')
-
-    pdf.set_font("Arial", 'B', 14);
-    pdf.set_text_color(0, 77, 64)
-    pdf.cell(63, 10, f"R$ {total_geral:,.2f}", 0, 0, 'C')
-    pdf.set_text_color(0, 0, 0)
-    pdf.cell(63, 10, f"R$ {total_sky:,.2f}", 0, 0, 'C')
-    pdf.cell(63, 10, f"R$ {total_amz:,.2f}", 0, 1, 'C')
-
-    pdf.ln(15)
-
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Contratos Fechados", 0, 1, 'L')
-    pdf.set_font("Arial", 'B', 8)
-    pdf.set_fill_color(0, 77, 64);
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(10, 8, "ID", 1, 0, 'C', True)
-    pdf.cell(50, 8, "Cliente", 1, 0, 'C', True)
-    pdf.cell(25, 8, "Contrato", 1, 0, 'C', True)
-    pdf.cell(30, 8, "Total", 1, 0, 'C', True)
-    pdf.cell(37.5, 8, "Fat. Sky", 1, 0, 'C', True)
-    pdf.cell(37.5, 8, "Fat. Amz", 1, 1, 'C', True)
-
-    pdf.set_font("Arial", '', 8);
-    pdf.set_text_color(0, 0, 0)
-    for index, row in df.iterrows():
-        pdf.cell(10, 8, str(row['id']), 1, 0, 'C')
-        pdf.cell(50, 8, str(row['cliente'])[:25], 1, 0, 'C')
-        pdf.cell(25, 8, str(row['tipo_contrato']).split(' ')[0], 1, 0, 'C')
-        pdf.cell(30, 8, f"{row['valor_total']:,.2f}", 1, 0, 'C')
-        pdf.cell(37.5, 8, f"{row['fat_skyhawk']:,.2f}", 1, 0, 'C')
-        pdf.cell(37.5, 8, f"{row['fat_amazing']:,.2f}", 1, 1, 'C')
-
-    return pdf.output(dest='S').encode('latin-1')
-
-
 # =============================================================================
 # INTERFACE PRINCIPAL
 # =============================================================================
@@ -370,7 +419,22 @@ def main():
     if 'carrinho' not in st.session_state: st.session_state['carrinho'] = []
 
     with st.sidebar:
-        if os.path.exists(ARQUIVO_LOGO): st.image(ARQUIVO_LOGO, use_container_width=True)
+        if os.path.exists(ARQUIVO_LOGO):
+            img_b64 = get_image_base64(ARQUIVO_LOGO)
+            if img_b64:
+                st.markdown(
+                    f"""
+                    <div style="background-color: white; padding: 30px 10px; border-radius: 12px; text-align: center; margin-bottom: 25px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+                        <img src="{img_b64}" style="max-width: 90%; height: auto;">
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+            else:
+                st.image(ARQUIVO_LOGO, use_container_width=True)
+        else:
+            st.warning("Logo não encontrada")
+
         st.divider()
         menu = st.radio("Navegação", ["Nova Proposta", "Relatórios Gerenciais"])
 
@@ -466,7 +530,6 @@ def main():
                 roi = gerar_analise_roi(contrato, total, duracao)
                 st.success(f"Total Mensal: R$ {total:,.2f}")
 
-                # --- BOTÕES DE DOWNLOAD SOLICITADOS ---
                 c1, c2 = st.columns(2)
                 if cliente:
                     pdf = gerar_proposta_pdf(cliente, contrato, duracao, st.session_state['carrinho'], total, roi)
